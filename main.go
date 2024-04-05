@@ -1,87 +1,52 @@
 package main
 
 import (
-	"bufio"
-	"errors"
-	"flag"
-	"fmt"
-	"os"
-	"strings"
+	"context"
 
-	"github.com/kljensen/snowball"
+	"flag"
+
+	"log"
+
+	"yadrotask/internal/config"
+	"yadrotask/internal/service"
+	"yadrotask/pkg/database"
 )
 
-const (
-	rus = "russian"
-	eng = "english"
+var (
+	outputFlag         bool
+	numberOfComicsFlag int
 )
 
 func main() {
-	var sentence string
-	var language string
-	flag.StringVar(&sentence, "s", "", "sentence for stemming")
-	flag.StringVar(&language, "l", "", "stemming language")
+	flag.BoolVar(&outputFlag, "o", false, "activate console output")
+	flag.IntVar(&numberOfComicsFlag, "n", 0, "number of output comics")
 	flag.Parse()
-	if sentence == "" {
-		fmt.Println("Enter sentence for stemming")
-		return
-	}
-	if language == "" {
-		language = "english"
+
+	ctx := context.Background()
+
+	cfg, err := config.ReadConfig()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	stopWordsMap, err := createStopWordsMap(language)
+	service, err := service.New(cfg.SourceURL)
 	if err != nil {
-		fmt.Printf("error create stop words map: %s/n", err)
-		return
+		log.Fatal(err)
 	}
-	normalizedSentence, err := normalizeSentence(sentence, language, stopWordsMap)
-	if err != nil {
-		fmt.Printf("error normalize sentence: %s/n", err)
-		return
-	}
-	fmt.Println(normalizedSentence)
-}
 
-// Функция для создания мапы стоп-слов
-func createStopWordsMap(language string) (map[string]struct{}, error) {
-	var fileName string
-	switch language {
-	case rus:
-		fileName = "stop_words_rus.txt"
-	case eng:
-		fileName = "stop_words_eng.txt"
-	default:
-		return nil, errors.New("unavaliable language")
-	}
-	// Открываю список стоп-слов
-	file, err := os.Open(fileName)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	// Читаю стоп-слова из файла и добавляю их в map
-	stopWordsMap := make(map[string]struct{})
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		stopWordsMap[strings.ToLower(scanner.Text())] = struct{}{}
-	}
-	return stopWordsMap, nil
-}
-
-// Функция для нормализации предложения
-func normalizeSentence(sentence, language string, stopWordsMap map[string]struct{}) (string, error) {
-	var normalizedWords []string
-	// Перебираю слова введенные пользователем, если слово не содержится в стоп-листе, то нормализую и вывожу
-	for _, word := range strings.Fields(sentence) {
-		toLowerCase := strings.ToLower(word)
-		if _, isStopWord := stopWordsMap[toLowerCase]; !isStopWord {
-			stemmed, err := snowball.Stem(toLowerCase, language, true)
-			if err != nil {
-				return "", err
-			}
-			normalizedWords = append(normalizedWords, stemmed)
+	var comicsInfo []database.Comics
+	for i := 1; i <= cfg.ComicsCount; i++ {
+		comics, err := service.GetComicsDataByID(ctx, i)
+		if err != nil {
+			log.Fatal(err)
 		}
+		comicsInfo = append(comicsInfo, comics)
 	}
-	return strings.Join(normalizedWords, " "), nil
+
+	if outputFlag {
+		if numberOfComicsFlag != 0 && numberOfComicsFlag <= len(comicsInfo) {
+			comicsInfo = comicsInfo[:numberOfComicsFlag]
+		}
+		log.Print(comicsInfo)
+	}
 }
