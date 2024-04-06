@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-
 	"flag"
-
 	"log"
 
 	"yadrotask/internal/config"
 	"yadrotask/internal/service"
 	"yadrotask/pkg/database"
+	"yadrotask/pkg/xkcd/client"
 )
 
 var (
@@ -29,18 +28,21 @@ func main() {
 		log.Fatal(err)
 	}
 
-	service, err := service.New(cfg.SourceURL)
+	db := database.New(cfg.DBFile)
+
+	client, err := client.New(cfg.SourceURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	var comicsInfo []database.Comics
-	for i := 1; i <= cfg.ComicsCount; i++ {
-		comics, err := service.GetComicsDataByID(ctx, i)
-		if err != nil {
-			log.Fatal(err)
-		}
-		comicsInfo = append(comicsInfo, comics)
+	service, err := service.New(client, db, cfg.StopWords)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	comicsInfo, err := service.GetComicsData(ctx, cfg.ComicsCount)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	if outputFlag {

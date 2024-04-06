@@ -2,66 +2,60 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"time"
 	"yadrotask/pkg/database"
 	"yadrotask/pkg/words"
+	"yadrotask/pkg/xkcd/client"
 )
 
 type Service interface {
-	GetComicsDataByID(ctx context.Context, id int) (database.Comics, error)
+	GetComicsData(ctx context.Context, n int) ([]database.Comics, error)
 }
 
 type serviceImpl struct {
-	baseUrl   string
-	client    *http.Client
 	stopWords map[string]struct{}
+	client    client.Client
+	db        database.Database
 }
 
-type Entity struct {
-	Transcript string `json:"transcript"`
-	Alt        string `json:"alt"`
-	Img        string `json:"img"`
-}
-
-func New(baseUrl string) (Service, error) {
-	client := &http.Client{
-		Timeout: time.Second * 10,
-	}
-
-	stopWordsMap, err := words.CreateStopWordsMap()
+func New(client client.Client, db database.Database, fileName string) (Service, error) {
+	stopWordsMap, err := words.CreateStopWordsMap(fileName)
 	if err != nil {
 		return nil, err
 	}
 
 	return &serviceImpl{
-		baseUrl:   baseUrl,
-		client:    client,
 		stopWords: stopWordsMap,
+		client:    client,
+		db:        db,
 	}, nil
 }
 
-func (s *serviceImpl) GetComicsDataByID(ctx context.Context, id int) (database.Comics, error) {
-	resp, err := s.client.Get(fmt.Sprintf("%s/%d/info.0.json", s.baseUrl, id))
-	if err != nil {
-		return database.Comics{}, err
+func (s *serviceImpl) GetComicsData(ctx context.Context, n int) ([]database.Comics, error) {
+	var comics []database.Comics
+	for i := 1; i <= n; i++ {
+		comicsData, err := s.client.GetComicsDataByID(ctx, i)
+		if err != nil {
+			return nil, err
+		}
+
+		entity, err := dto(comicsData, s.stopWords)
+		if err != nil {
+			return nil, err
+		}
+
+		comics = append(comics, entity)
 	}
 
-	defer resp.Body.Close()
+	s.db.AddToEntries(comics)
+	s.db.SaveInFile()
 
-	// экземпляр структуры, куда будут парситься данные
-	var entity Entity
+	return comics, nil
+}
 
-	// Декодирование JSON-ответа в структуру
-	err = json.NewDecoder(resp.Body).Decode(&entity)
-	if err != nil {
-		return database.Comics{}, err
-	}
+func dto(entity client.Entity, stopWords map[string]struct{}) (database.Comics, error) {
 	var keywords []string
 	if entity.Alt != "" {
-		normalizedSentence, err := words.NormalizeSentence(entity.Alt, s.stopWords)
+		normalizedSentence, err := words.NormalizeSentence(entity.Alt, stopWords)
 		if err != nil {
 			return database.Comics{}, err
 		}
@@ -69,7 +63,7 @@ func (s *serviceImpl) GetComicsDataByID(ctx context.Context, id int) (database.C
 	}
 
 	if entity.Transcript != "" {
-		normalizedSentence, err := words.NormalizeSentence(entity.Transcript, s.stopWords)
+		normalizedSentence, err := words.NormalizeSentence(entity.Transcript, stopWords)
 		if err != nil {
 			return database.Comics{}, err
 		}
@@ -77,7 +71,7 @@ func (s *serviceImpl) GetComicsDataByID(ctx context.Context, id int) (database.C
 	}
 
 	return database.Comics{
-		ID:       id,
+		ID:       entity.ID,
 		URL:      entity.Img,
 		Keywords: keywords,
 	}, nil

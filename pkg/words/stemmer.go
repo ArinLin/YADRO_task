@@ -9,10 +9,8 @@ import (
 	"github.com/kljensen/snowball"
 )
 
-const fileName = "stop_words_eng.txt"
-
 // Функция для создания мапы стоп-слов
-func CreateStopWordsMap() (map[string]struct{}, error) {
+func CreateStopWordsMap(fileName string) (map[string]struct{}, error) {
 	// Открываю список стоп-слов
 	file, err := os.Open(fileName)
 	if err != nil {
