@@ -1,0 +1,4 @@
+source_url: "https://xkcd.com"
+db_file: "database.json"
+stop_words: "stop_words_eng.txt"
+comics_count: 30
